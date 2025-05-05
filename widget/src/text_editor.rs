@@ -57,6 +57,7 @@ use std::ops::DerefMut;
 use std::sync::Arc;
 
 use iced_runtime::keyboard::key::{Code, Physical};
+use iced_runtime::{task, Task};
 pub use text::editor::{Action, Edit, Motion};
 
 /// A multi-line text input.
@@ -104,6 +105,7 @@ pub struct TextEditor<
     Theme: Catalog,
     Renderer: text::Renderer,
 {
+    id: Option<Id>,
     content: &'a Content<Renderer>,
     placeholder: Option<text::Fragment<'a>>,
     font: Option<Renderer::Font>,
@@ -132,6 +134,7 @@ where
     /// Creates new [`TextEditor`] with the given [`Content`].
     pub fn new(content: &'a Content<Renderer>) -> Self {
         Self {
+            id: None,
             content,
             placeholder: None,
             font: None,
@@ -149,6 +152,12 @@ where
                 highlighter::Format::default()
             },
         }
+    }
+
+    /// Sets the [`Id`] of the [`TextEditor`].
+    pub fn id(mut self, id: impl Into<Id>) -> Self {
+        self.id = Some(id.into());
+        self
     }
 }
 
@@ -257,6 +266,7 @@ where
         ) -> highlighter::Format<Renderer::Font>,
     ) -> TextEditor<'a, H, Message, Theme, Renderer> {
         TextEditor {
+            id: self.id,
             content: self.content,
             placeholder: self.placeholder,
             font: self.font,
@@ -959,7 +969,7 @@ where
     ) {
         let state = tree.state.downcast_mut::<State<Highlighter>>();
 
-        operation.focusable(state, None);
+        operation.focusable(state, self.id.as_ref().map(|id| &id.0));
     }
 }
 
@@ -976,6 +986,42 @@ where
         text_editor: TextEditor<'a, Highlighter, Message, Theme, Renderer>,
     ) -> Self {
         Self::new(text_editor)
+    }
+}
+
+/// The identifier of a [`TextEditor`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Id(widget::Id);
+
+impl Id {
+    /// Creates a custom [`Id`].
+    pub fn new(id: impl Into<std::borrow::Cow<'static, str>>) -> Self {
+        Self(widget::Id::new(id))
+    }
+
+    /// Creates a unique [`Id`].
+    ///
+    /// This function produces a different [`Id`] every time it is called.
+    pub fn unique() -> Self {
+        Self(widget::Id::unique())
+    }
+}
+
+impl From<Id> for widget::Id {
+    fn from(id: Id) -> Self {
+        id.0
+    }
+}
+
+impl From<&'static str> for Id {
+    fn from(id: &'static str) -> Self {
+        Self::new(id)
+    }
+}
+
+impl From<String> for Id {
+    fn from(id: String) -> Self {
+        Self::new(id)
     }
 }
 
