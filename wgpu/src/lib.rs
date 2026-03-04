@@ -91,7 +91,7 @@ pub struct Renderer {
     #[cfg(any(feature = "svg", feature = "image"))]
     image_cache: std::cell::RefCell<image::Cache>,
 
-    staging_belt: wgpu::util::StagingBelt,
+    pub staging_belt: wgpu::util::StagingBelt,
 }
 
 impl Renderer {
