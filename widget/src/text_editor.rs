@@ -36,7 +36,6 @@ use crate::core::clipboard;
 use crate::core::input_method;
 use crate::core::keyboard;
 use crate::core::keyboard::key;
-use crate::core::keyboard::key::{Code, Physical};
 use crate::core::layout::{self, Layout};
 use crate::core::mouse;
 use crate::core::renderer;
@@ -1104,8 +1103,6 @@ pub struct KeyPress {
     pub text: Option<SmolStr>,
     /// The current [`Status`] of the [`TextEditor`].
     pub status: Status,
-    /// The physical key pressed.
-    pub physical_key: Physical,
 }
 
 impl<Message> Binding<Message> {
@@ -1118,7 +1115,6 @@ impl<Message> Binding<Message> {
             modifiers,
             text,
             status,
-            physical_key,
         } = event;
 
         if !matches!(status, Status::Focused { .. }) {
@@ -1280,7 +1276,6 @@ impl<Message> Update<Message> {
                 physical_key,
                 modifiers,
                 text,
-                physical_key,
                 ..
             }) => {
                 let status = if state.focus.is_some() {
@@ -1298,7 +1293,6 @@ impl<Message> Update<Message> {
                     modifiers: *modifiers,
                     text: text.clone(),
                     status,
-                    physical_key: physical_key.clone(),
                 };
 
                 if let Some(key_binding) = key_binding {
