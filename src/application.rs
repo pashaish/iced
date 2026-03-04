@@ -36,8 +36,7 @@ use crate::shell;
 use crate::theme;
 use crate::window;
 use crate::{
-    Element, Executor, Font, Preset, Result, Settings, Size, Subscription,
-    Task, Theme,
+    Element, Executor, Font, Never, Preset, Result, Settings, Size, Subscription, Task, Theme,
 };
 
 use iced_debug as debug;
@@ -125,11 +124,7 @@ where
             self.boot.boot()
         }
 
-        fn update(
-            &self,
-            state: &mut Self::State,
-            message: Self::Message,
-        ) -> Task<Self::Message> {
+        fn update(&self, state: &mut Self::State, message: Self::Message) -> Task<Self::Message> {
             self.update.update(state, message)
         }
 
@@ -198,10 +193,17 @@ impl<P: Program> Application<P> {
         #[cfg(feature = "tester")]
         let program = iced_tester::attach(self);
 
-        #[cfg(all(feature = "debug", not(feature = "tester")))]
+        #[cfg(all(
+            feature = "debug",
+            not(feature = "tester"),
+            not(target_arch = "wasm32")
+        ))]
         let program = iced_devtools::attach(self);
 
-        #[cfg(not(any(feature = "tester", feature = "debug")))]
+        #[cfg(not(any(
+            feature = "tester",
+            all(feature = "debug", not(target_arch = "wasm32"))
+        )))]
         let program = self;
 
         Ok(shell::run(program)?)
@@ -339,13 +341,9 @@ impl<P: Program> Application<P> {
     pub fn title(
         self,
         title: impl TitleFn<P::State>,
-    ) -> Application<
-        impl Program<State = P::State, Message = P::Message, Theme = P::Theme>,
-    > {
+    ) -> Application<impl Program<State = P::State, Message = P::Message, Theme = P::Theme>> {
         Application {
-            raw: program::with_title(self.raw, move |state, _window| {
-                title.title(state)
-            }),
+            raw: program::with_title(self.raw, move |state, _window| title.title(state)),
             settings: self.settings,
             window: self.window,
             presets: self.presets,
@@ -356,9 +354,7 @@ impl<P: Program> Application<P> {
     pub fn subscription(
         self,
         f: impl Fn(&P::State) -> Subscription<P::Message>,
-    ) -> Application<
-        impl Program<State = P::State, Message = P::Message, Theme = P::Theme>,
-    > {
+    ) -> Application<impl Program<State = P::State, Message = P::Message, Theme = P::Theme>> {
         Application {
             raw: program::with_subscription(self.raw, f),
             settings: self.settings,
@@ -371,13 +367,9 @@ impl<P: Program> Application<P> {
     pub fn theme(
         self,
         f: impl ThemeFn<P::State, P::Theme>,
-    ) -> Application<
-        impl Program<State = P::State, Message = P::Message, Theme = P::Theme>,
-    > {
+    ) -> Application<impl Program<State = P::State, Message = P::Message, Theme = P::Theme>> {
         Application {
-            raw: program::with_theme(self.raw, move |state, _window| {
-                f.theme(state)
-            }),
+            raw: program::with_theme(self.raw, move |state, _window| f.theme(state)),
             settings: self.settings,
             window: self.window,
             presets: self.presets,
@@ -388,9 +380,7 @@ impl<P: Program> Application<P> {
     pub fn style(
         self,
         f: impl Fn(&P::State, &P::Theme) -> theme::Style,
-    ) -> Application<
-        impl Program<State = P::State, Message = P::Message, Theme = P::Theme>,
-    > {
+    ) -> Application<impl Program<State = P::State, Message = P::Message, Theme = P::Theme>> {
         Application {
             raw: program::with_style(self.raw, f),
             settings: self.settings,
@@ -403,13 +393,9 @@ impl<P: Program> Application<P> {
     pub fn scale_factor(
         self,
         f: impl Fn(&P::State) -> f32,
-    ) -> Application<
-        impl Program<State = P::State, Message = P::Message, Theme = P::Theme>,
-    > {
+    ) -> Application<impl Program<State = P::State, Message = P::Message, Theme = P::Theme>> {
         Application {
-            raw: program::with_scale_factor(self.raw, move |state, _window| {
-                f(state)
-            }),
+            raw: program::with_scale_factor(self.raw, move |state, _window| f(state)),
             settings: self.settings,
             window: self.window,
             presets: self.presets,
@@ -419,9 +405,7 @@ impl<P: Program> Application<P> {
     /// Sets the executor of the [`Application`].
     pub fn executor<E>(
         self,
-    ) -> Application<
-        impl Program<State = P::State, Message = P::Message, Theme = P::Theme>,
-    >
+    ) -> Application<impl Program<State = P::State, Message = P::Message, Theme = P::Theme>>
     where
         E: Executor,
     {
@@ -438,10 +422,7 @@ impl<P: Program> Application<P> {
     /// Presets can be used to override the default booting strategy
     /// of your application during testing to create reproducible
     /// environments.
-    pub fn presets(
-        self,
-        presets: impl IntoIterator<Item = Preset<P::State, P::Message>>,
-    ) -> Self {
+    pub fn presets(self, presets: impl IntoIterator<Item = Preset<P::State, P::Message>>) -> Self {
         Self {
             presets: presets.into_iter().collect(),
             ..self
@@ -472,11 +453,7 @@ impl<P: Program> Program for Application<P> {
         self.raw.boot()
     }
 
-    fn update(
-        &self,
-        state: &mut Self::State,
-        message: Self::Message,
-    ) -> Task<Self::Message> {
+    fn update(&self, state: &mut Self::State, message: Self::Message) -> Task<Self::Message> {
         debug::hot(|| self.raw.update(state, message))
     }
 
@@ -496,11 +473,7 @@ impl<P: Program> Program for Application<P> {
         debug::hot(|| self.raw.subscription(state))
     }
 
-    fn theme(
-        &self,
-        state: &Self::State,
-        window: iced_core::window::Id,
-    ) -> Option<Self::Theme> {
+    fn theme(&self, state: &Self::State, window: iced_core::window::Id) -> Option<Self::Theme> {
         debug::hot(|| self.raw.theme(state, window))
     }
 
@@ -593,8 +566,8 @@ pub trait UpdateFn<State, Message> {
     fn update(&self, state: &mut State, message: Message) -> Task<Message>;
 }
 
-impl<State, Message> UpdateFn<State, Message> for () {
-    fn update(&self, _state: &mut State, _message: Message) -> Task<Message> {
+impl<State> UpdateFn<State, Never> for () {
+    fn update(&self, _state: &mut State, _message: Never) -> Task<Never> {
         Task::none()
     }
 }
@@ -618,8 +591,8 @@ pub trait ViewFn<'a, State, Message, Theme, Renderer> {
     fn view(&self, state: &'a State) -> Element<'a, Message, Theme, Renderer>;
 }
 
-impl<'a, T, State, Message, Theme, Renderer, Widget>
-    ViewFn<'a, State, Message, Theme, Renderer> for T
+impl<'a, T, State, Message, Theme, Renderer, Widget> ViewFn<'a, State, Message, Theme, Renderer>
+    for T
 where
     T: Fn(&'a State) -> Widget,
     State: 'static,

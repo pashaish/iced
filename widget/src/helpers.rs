@@ -23,9 +23,7 @@ use crate::text_input::{self, TextInput};
 use crate::toggler::{self, Toggler};
 use crate::tooltip::{self, Tooltip};
 use crate::vertical_slider::{self, VerticalSlider};
-use crate::{
-    Column, Grid, MouseArea, Pin, Responsive, Row, Sensor, Space, Stack, Themer,
-};
+use crate::{Column, Grid, MouseArea, Pin, Responsive, Row, Sensor, Space, Stack, Themer};
 
 use std::borrow::Borrow;
 use std::ops::RangeInclusive;
@@ -110,6 +108,19 @@ macro_rules! stack {
     );
     ($($x:expr),+ $(,)?) => (
         $crate::Stack::with_children([$($crate::core::Element::from($x)),+])
+    );
+}
+
+/// Creates a [`Grid`] with the given children.
+///
+/// [`Grid`]: crate::Grid
+#[macro_export]
+macro_rules! grid {
+    () => (
+        $crate::Grid::new()
+    );
+    ($($x:expr),+ $(,)?) => (
+        $crate::Grid::with_children([$($crate::core::Element::from($x)),+])
     );
 }
 
@@ -634,36 +645,32 @@ where
 
         fn operate(
             &mut self,
-            state: &mut Tree,
+            tree: &mut Tree,
             layout: Layout<'_>,
             renderer: &Renderer,
             operation: &mut dyn operation::Operation,
         ) {
             self.content
                 .as_widget_mut()
-                .operate(state, layout, renderer, operation);
+                .operate(tree, layout, renderer, operation);
         }
 
         fn update(
             &mut self,
-            state: &mut Tree,
+            tree: &mut Tree,
             event: &Event,
             layout: Layout<'_>,
             cursor: mouse::Cursor,
             renderer: &Renderer,
-            clipboard: &mut dyn core::Clipboard,
             shell: &mut Shell<'_, Message>,
             viewport: &Rectangle,
         ) {
-            let is_mouse_press = matches!(
-                event,
-                core::Event::Mouse(mouse::Event::ButtonPressed(_))
-            );
+            let is_mouse_press =
+                matches!(event, core::Event::Mouse(mouse::Event::ButtonPressed(_)));
 
-            self.content.as_widget_mut().update(
-                state, event, layout, cursor, renderer, clipboard, shell,
-                viewport,
-            );
+            self.content
+                .as_widget_mut()
+                .update(tree, event, layout, cursor, renderer, shell, viewport);
 
             if is_mouse_press && cursor.is_over(layout.bounds()) {
                 shell.capture_event();
@@ -683,9 +690,7 @@ where
                 .as_widget()
                 .mouse_interaction(state, layout, cursor, viewport, renderer);
 
-            if interaction == mouse::Interaction::None
-                && cursor.is_over(layout.bounds())
-            {
+            if interaction == mouse::Interaction::None && cursor.is_over(layout.bounds()) {
                 mouse::Interaction::Idle
             } else {
                 interaction
@@ -699,15 +704,10 @@ where
             renderer: &Renderer,
             viewport: &Rectangle,
             translation: core::Vector,
-        ) -> Option<core::overlay::Element<'b, Message, Theme, Renderer>>
-        {
-            self.content.as_widget_mut().overlay(
-                state,
-                layout,
-                renderer,
-                viewport,
-                translation,
-            )
+        ) -> Option<core::overlay::Element<'b, Message, Theme, Renderer>> {
+            self.content
+                .as_widget_mut()
+                .overlay(state, layout, renderer, viewport, translation)
         }
     }
 
@@ -777,11 +777,10 @@ where
             renderer: &Renderer,
             limits: &layout::Limits,
         ) -> layout::Node {
-            let base = self.base.as_widget_mut().layout(
-                &mut tree.children[0],
-                renderer,
-                limits,
-            );
+            let base = self
+                .base
+                .as_widget_mut()
+                .layout(&mut tree.children[0], renderer, limits);
 
             let top = self.top.as_widget_mut().layout(
                 &mut tree.children[1],
@@ -825,8 +824,7 @@ where
 
                     renderer.with_layer(bounds, |renderer| {
                         self.top.as_widget().draw(
-                            top_tree, renderer, theme, style, top_layout,
-                            cursor, viewport,
+                            top_tree, renderer, theme, style, top_layout, cursor, viewport,
                         );
                     });
                 }
@@ -858,7 +856,6 @@ where
             layout: Layout<'_>,
             cursor: mouse::Cursor,
             renderer: &Renderer,
-            clipboard: &mut dyn core::Clipboard,
             shell: &mut Shell<'_, Message>,
             viewport: &Rectangle,
         ) {
@@ -868,8 +865,7 @@ where
 
             let is_hovered = cursor.is_over(layout.bounds());
 
-            if matches!(event, Event::Window(window::Event::RedrawRequested(_)))
-            {
+            if matches!(event, Event::Window(window::Event::RedrawRequested(_))) {
                 let mut count_focused = operation::focusable::count();
 
                 self.top.as_widget_mut().operate(
@@ -889,33 +885,28 @@ where
                 shell.request_redraw();
             }
 
-            let is_visible =
-                is_hovered || self.is_top_focused || self.is_top_overlay_active;
+            let is_visible = is_hovered || self.is_top_focused || self.is_top_overlay_active;
 
             if matches!(
                 event,
-                Event::Mouse(
-                    mouse::Event::CursorMoved { .. }
-                        | mouse::Event::ButtonReleased(_)
-                )
+                Event::Mouse(mouse::Event::CursorMoved { .. } | mouse::Event::ButtonReleased(_))
             ) || is_visible
             {
                 let redraw_request = shell.redraw_request();
 
                 self.top.as_widget_mut().update(
-                    top_tree, event, top_layout, cursor, renderer, clipboard,
-                    shell, viewport,
+                    top_tree, event, top_layout, cursor, renderer, shell, viewport,
                 );
 
                 // Ignore redraw requests of invisible content
                 if !is_visible {
                     Shell::replace_redraw_request(shell, redraw_request);
                 }
-            };
 
-            if shell.is_event_captured() {
-                return;
-            }
+                if shell.is_event_captured() {
+                    return;
+                }
+            };
 
             self.base.as_widget_mut().update(
                 base_tree,
@@ -923,7 +914,6 @@ where
                 base_layout,
                 cursor,
                 renderer,
-                clipboard,
                 shell,
                 viewport,
             );
@@ -942,9 +932,9 @@ where
                 .rev()
                 .zip(layout.children().rev().zip(tree.children.iter().rev()))
                 .map(|(child, (layout, tree))| {
-                    child.as_widget().mouse_interaction(
-                        tree, layout, cursor, viewport, renderer,
-                    )
+                    child
+                        .as_widget()
+                        .mouse_interaction(tree, layout, cursor, viewport, renderer)
                 })
                 .find(|&interaction| interaction != mouse::Interaction::None)
                 .unwrap_or_default()
@@ -957,19 +947,14 @@ where
             renderer: &Renderer,
             viewport: &Rectangle,
             translation: core::Vector,
-        ) -> Option<core::overlay::Element<'b, Message, Theme, Renderer>>
-        {
+        ) -> Option<core::overlay::Element<'b, Message, Theme, Renderer>> {
             let mut overlays = [&mut self.base, &mut self.top]
                 .into_iter()
                 .zip(layout.children().zip(tree.children.iter_mut()))
                 .map(|(child, (layout, tree))| {
-                    child.as_widget_mut().overlay(
-                        tree,
-                        layout,
-                        renderer,
-                        viewport,
-                        translation,
-                    )
+                    child
+                        .as_widget_mut()
+                        .overlay(tree, layout, renderer, viewport, translation)
                 });
 
             if let Some(base_overlay) = overlays.next()? {
@@ -1035,7 +1020,7 @@ pub fn scrollable<'a, Message, Theme, Renderer>(
 ) -> Scrollable<'a, Message, Theme, Renderer>
 where
     Theme: scrollable::Catalog + 'a,
-    Renderer: core::Renderer,
+    Renderer: core::text::Renderer,
 {
     Scrollable::new(content)
 }
@@ -1127,9 +1112,7 @@ where
 ///         .into()
 /// }
 /// ```
-pub fn text<'a, Theme, Renderer>(
-    text: impl text::IntoFragment<'a>,
-) -> Text<'a, Theme, Renderer>
+pub fn text<'a, Theme, Renderer>(text: impl text::IntoFragment<'a>) -> Text<'a, Theme, Renderer>
 where
     Theme: text::Catalog + 'a,
     Renderer: core::text::Renderer,
@@ -1138,9 +1121,7 @@ where
 }
 
 /// Creates a new [`Text`] widget that displays the provided value.
-pub fn value<'a, Theme, Renderer>(
-    value: impl ToString,
-) -> Text<'a, Theme, Renderer>
+pub fn value<'a, Theme, Renderer>(value: impl ToString) -> Text<'a, Theme, Renderer>
 where
     Theme: text::Catalog + 'a,
     Renderer: core::text::Renderer,
@@ -1222,9 +1203,7 @@ where
 ///     .into()
 /// }
 /// ```
-pub fn span<'a, Link, Font>(
-    text: impl text::IntoFragment<'a>,
-) -> text::Span<'a, Link, Font> {
+pub fn span<'a, Link, Font>(text: impl text::IntoFragment<'a>) -> text::Span<'a, Link, Font> {
     text::Span::new(text)
 }
 
@@ -1250,7 +1229,8 @@ pub use crate::markdown::view as markdown;
 /// }
 ///
 /// fn view(state: &State) -> Element<'_, Message> {
-///     checkbox("Toggle me!", state.is_checked)
+///     checkbox(state.is_checked)
+///         .label("Toggle me!")
 ///         .on_toggle(Message::CheckboxToggled)
 ///         .into()
 /// }
@@ -1265,14 +1245,13 @@ pub use crate::markdown::view as markdown;
 /// ```
 /// ![Checkbox drawn by `iced_wgpu`](https://github.com/iced-rs/iced/blob/7760618fb112074bc40b148944521f312152012a/docs/images/checkbox.png?raw=true)
 pub fn checkbox<'a, Message, Theme, Renderer>(
-    label: impl Into<String>,
     is_checked: bool,
 ) -> Checkbox<'a, Message, Theme, Renderer>
 where
     Theme: checkbox::Catalog + 'a,
     Renderer: core::text::Renderer,
 {
-    Checkbox::new(label, is_checked)
+    Checkbox::new(is_checked)
 }
 
 /// Creates a new [`Radio`].
@@ -1613,10 +1592,11 @@ where
 ///     ];
 ///
 ///     pick_list(
-///         fruits,
 ///         state.favorite,
-///         Message::FruitSelected,
+///         fruits,
+///         Fruit::to_string,
 ///     )
+///     .on_select(Message::FruitSelected)
 ///     .placeholder("Select your favorite fruit...")
 ///     .into()
 /// }
@@ -1641,19 +1621,19 @@ where
 /// }
 /// ```
 pub fn pick_list<'a, T, L, V, Message, Theme, Renderer>(
-    options: L,
     selected: Option<V>,
-    on_selected: impl Fn(T) -> Message + 'a,
+    options: L,
+    to_string: impl Fn(&T) -> String + 'a,
 ) -> PickList<'a, T, L, V, Message, Theme, Renderer>
 where
-    T: ToString + PartialEq + Clone + 'a,
+    T: PartialEq + Clone + 'a,
     L: Borrow<[T]> + 'a,
     V: Borrow<T> + 'a,
     Message: Clone,
     Theme: pick_list::Catalog + overlay::menu::Catalog,
     Renderer: core::text::Renderer,
 {
-    PickList::new(options, selected, on_selected)
+    PickList::new(selected, options, to_string)
 }
 
 /// Creates a new [`ComboBox`].
@@ -1718,7 +1698,7 @@ pub fn combo_box<'a, T, Message, Theme, Renderer>(
     state: &'a combo_box::State<T>,
     placeholder: &str,
     selection: Option<&T>,
-    on_selected: impl Fn(T) -> Message + 'static,
+    on_selected: impl Fn(T) -> Message + 'a,
 ) -> ComboBox<'a, T, Message, Theme, Renderer>
 where
     T: std::fmt::Display + Clone,
@@ -1763,10 +1743,7 @@ pub fn space() -> Space {
 ///     progress_bar(0.0..=100.0, state.progress).into()
 /// }
 /// ```
-pub fn progress_bar<'a, Theme>(
-    range: RangeInclusive<f32>,
-    value: f32,
-) -> ProgressBar<'a, Theme>
+pub fn progress_bar<'a, Theme>(range: RangeInclusive<f32>, value: f32) -> ProgressBar<'a, Theme>
 where
     Theme: progress_bar::Catalog + 'a,
 {
@@ -1823,9 +1800,7 @@ pub fn image<Handle>(handle: impl Into<Handle>) -> crate::Image<Handle> {
 /// }
 /// ```
 #[cfg(feature = "svg")]
-pub fn svg<'a, Theme>(
-    handle: impl Into<core::svg::Handle>,
-) -> crate::Svg<'a, Theme>
+pub fn svg<'a, Theme>(handle: impl Into<core::svg::Handle>) -> crate::Svg<'a, Theme>
 where
     Theme: crate::svg::Catalog,
 {
@@ -1836,34 +1811,43 @@ where
 ///
 /// Useful for showing some love to your favorite GUI library in your "About" screen,
 /// for instance.
-#[cfg(feature = "svg")]
 pub fn iced<'a, Message, Theme, Renderer>(
     text_size: impl Into<core::Pixels>,
 ) -> Element<'a, Message, Theme, Renderer>
 where
     Message: 'a,
-    Renderer: core::Renderer
-        + core::text::Renderer<Font = core::Font>
-        + core::svg::Renderer
-        + 'a,
-    Theme: text::Catalog + crate::svg::Catalog + 'a,
+    Renderer: core::Renderer + core::text::Renderer<Font = core::Font> + 'a,
+    Theme: text::Catalog + container::Catalog + 'a,
+    <Theme as container::Catalog>::Class<'a>: From<container::StyleFn<'a, Theme>>,
+    <Theme as text::Catalog>::Class<'a>: From<text::StyleFn<'a, Theme>>,
 {
-    use crate::core::{Alignment, Font};
-    use crate::svg;
-    use std::sync::LazyLock;
-
-    static LOGO: LazyLock<svg::Handle> = LazyLock::new(|| {
-        svg::Handle::from_memory(include_bytes!("../assets/iced-logo.svg"))
-    });
+    use crate::core::border;
+    use crate::core::color;
+    use crate::core::gradient;
+    use crate::core::{Alignment, Color, Font, Radians};
 
     let text_size = text_size.into();
 
     row![
-        svg(LOGO.clone()).width(text_size * 1.3),
-        text("iced")
-            .size(text_size)
-            .font(Font::MONOSPACE)
-            .shaping(text::Shaping::Advanced)
+        container(
+            text(Renderer::ICED_LOGO)
+                .line_height(1.0)
+                .size(text_size)
+                .font(Renderer::ICON_FONT)
+                .color(Color::WHITE)
+        )
+        .padding(text_size * 0.15)
+        .style(move |_| container::Style {
+            background: Some(
+                gradient::Linear::new(Radians::PI / 4.0)
+                    .add_stop(0.0, color!(0x0033ff))
+                    .add_stop(1.0, color!(0x1177ff))
+                    .into()
+            ),
+            border: border::rounded(border::radius(text_size * 0.4)),
+            ..container::Style::default()
+        }),
+        text("iced").size(text_size).font(Font::MONOSPACE)
     ]
     .spacing(text_size.0 / 3.0)
     .align_y(Alignment::Center)
@@ -1925,9 +1909,7 @@ where
 /// }
 /// ```
 #[cfg(feature = "canvas")]
-pub fn canvas<P, Message, Theme, Renderer>(
-    program: P,
-) -> crate::Canvas<P, Message, Theme, Renderer>
+pub fn canvas<P, Message, Theme, Renderer>(program: P) -> crate::Canvas<P, Message, Theme, Renderer>
 where
     Renderer: crate::graphics::geometry::Renderer,
     P: crate::canvas::Program<Message, Theme, Renderer>,
@@ -1963,9 +1945,7 @@ where
 /// }
 /// ```
 #[cfg(feature = "qr_code")]
-pub fn qr_code<'a, Theme>(
-    data: &'a crate::qr_code::Data,
-) -> crate::QRCode<'a, Theme>
+pub fn qr_code<'a, Theme>(data: &'a crate::qr_code::Data) -> crate::QRCode<'a, Theme>
 where
     Theme: crate::qr_code::Catalog + 'a,
 {
@@ -2044,11 +2024,7 @@ where
 /// ```
 pub fn pane_grid<'a, T, Message, Theme, Renderer>(
     state: &'a pane_grid::State<T>,
-    view: impl Fn(
-        pane_grid::Pane,
-        &'a T,
-        bool,
-    ) -> pane_grid::Content<'a, Message, Theme, Renderer>,
+    view: impl Fn(pane_grid::Pane, &'a T, bool) -> pane_grid::Content<'a, Message, Theme, Renderer>,
 ) -> PaneGrid<'a, Message, Theme, Renderer>
 where
     Theme: pane_grid::Catalog,

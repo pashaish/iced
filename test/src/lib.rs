@@ -83,6 +83,7 @@
 //! [`typewrite`](Simulator::typewrite)—and even perform [_snapshot testing_](Simulator::snapshot)!
 //!
 //! [the classical counter interface]: https://book.iced.rs/architecture.html#dissecting-an-interface
+pub use iced_futures as futures;
 pub use iced_program as program;
 pub use iced_renderer as renderer;
 pub use iced_runtime as runtime;
@@ -104,6 +105,11 @@ pub use instruction::Instruction;
 pub use selector::Selector;
 pub use simulator::{Simulator, simulator};
 
+use crate::core::Size;
+use crate::core::theme;
+use crate::core::time::{Duration, Instant};
+use crate::core::window;
+
 use std::path::Path;
 
 /// Runs an [`Ice`] test suite for the given [`Program`](program::Program).
@@ -114,16 +120,22 @@ use std::path::Path;
 /// Remember that an [`Emulator`] executes the real thing! Side effects _will_
 /// take place. It is up to you to ensure your tests have reproducible environments
 /// by leveraging [`Preset`][program::Preset].
-pub fn run(
-    program: impl program::Program + 'static,
+pub fn run<P: program::Program + 'static>(
+    program: P,
     tests_dir: impl AsRef<Path>,
 ) -> Result<(), Error> {
-    use crate::runtime::futures::futures::StreamExt;
-    use crate::runtime::futures::futures::channel::mpsc;
-    use crate::runtime::futures::futures::executor;
+    use crate::futures::futures::StreamExt;
+    use crate::futures::futures::channel::mpsc;
+    use crate::futures::futures::executor;
 
     use std::ffi::OsStr;
     use std::fs;
+
+    let errors_dir = tests_dir.as_ref().join("errors");
+
+    if errors_dir.exists() {
+        fs::remove_dir_all(&errors_dir)?;
+    }
 
     let files = fs::read_dir(tests_dir)?;
     let mut tests = Vec::new();
@@ -176,15 +188,10 @@ pub fn run(
     for (file, ice, preset) in tests {
         let (sender, mut receiver) = mpsc::channel(1);
 
-        let mut emulator = Emulator::with_preset(
-            sender,
-            &program,
-            ice.mode,
-            ice.viewport,
-            preset,
-        );
+        let mut emulator = Emulator::with_preset(sender, &program, ice.mode, ice.viewport, preset);
 
-        let mut instructions = ice.instructions.into_iter();
+        let mut instructions = ice.instructions.iter();
+        let mut current = 0;
 
         loop {
             let event = executor::block_on(receiver.next())
@@ -195,6 +202,40 @@ pub fn run(
                     emulator.perform(&program, action);
                 }
                 emulator::Event::Failed(instruction) => {
+                    fs::create_dir_all(&errors_dir)?;
+
+                    let theme = emulator
+                        .theme(&program)
+                        .unwrap_or_else(|| <P::Theme as theme::Base>::default(theme::Mode::None));
+
+                    let screenshot = emulator.screenshot(&program, &theme, 2.0);
+
+                    let image = fs::File::create(
+                        errors_dir.join(
+                            file.path()
+                                .with_extension("png")
+                                .file_name()
+                                .expect("Test must have a filename"),
+                        ),
+                    )?;
+
+                    let mut encoder =
+                        png::Encoder::new(image, screenshot.size.width, screenshot.size.height);
+                    encoder.set_color(png::ColorType::Rgba);
+
+                    let mut writer = encoder.write_header()?;
+                    writer.write_image_data(&screenshot.rgba)?;
+                    writer.finish()?;
+
+                    let reproduction = Ice {
+                        viewport: ice.viewport,
+                        mode: ice.mode,
+                        preset: ice.preset,
+                        instructions: ice.instructions[..current].to_vec(),
+                    };
+
+                    fs::write(errors_dir.join(file.file_name()), reproduction.to_string())?;
+
                     return Err(Error::IceTestingFailed {
                         file: file.path().to_path_buf(),
                         instruction,
@@ -206,10 +247,51 @@ pub fn run(
                     };
 
                     emulator.run(&program, instruction);
+                    current += 1;
                 }
             }
         }
     }
 
     Ok(())
+}
+
+/// Takes a screenshot of the given [`Program`](program::Program) with the given theme, viewport,
+/// and scale factor after running it for the given [`Duration`].
+pub fn screenshot<P: program::Program + 'static>(
+    program: &P,
+    theme: &P::Theme,
+    viewport: impl Into<Size>,
+    scale_factor: f32,
+    duration: Duration,
+) -> window::Screenshot {
+    use crate::runtime::futures::futures::channel::mpsc;
+
+    let (sender, mut receiver) = mpsc::channel(100);
+
+    let mut emulator = Emulator::new(sender, program, emulator::Mode::Immediate, viewport.into());
+
+    let start = Instant::now();
+
+    loop {
+        if let Ok(event) = receiver.try_recv() {
+            match event {
+                emulator::Event::Action(action) => {
+                    emulator.perform(program, action);
+                }
+                emulator::Event::Failed(_) => {
+                    unreachable!("no instructions should be executed during a screenshot");
+                }
+                emulator::Event::Ready => {}
+            }
+        }
+
+        if start.elapsed() >= duration {
+            break;
+        }
+
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    emulator.screenshot(program, theme, scale_factor)
 }
