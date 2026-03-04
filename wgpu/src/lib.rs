@@ -51,7 +51,7 @@ use iced_debug as debug;
 pub use iced_graphics as graphics;
 pub use iced_graphics::core;
 
-pub use wgpu;
+pub use ;
 
 pub use engine::Engine;
 pub use layer::Layer;
@@ -131,7 +131,7 @@ impl Renderer {
         }
     }
 
-    fn draw(
+    pub fn draw(
         &mut self,
         clear_color: Option<Color>,
         target: &wgpu::TextureView,
