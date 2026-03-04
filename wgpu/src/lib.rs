@@ -51,7 +51,7 @@ use iced_debug as debug;
 pub use iced_graphics as graphics;
 pub use iced_graphics::core;
 
-pub use ;
+pub use wgpu;
 
 pub use engine::Engine;
 pub use layer::Layer;
